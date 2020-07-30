@@ -1,0 +1,327 @@
+Time varying sounds
+
+We have been making sounds so far that go on forever until we press a key to stop synthesising (sometimes they faded to silence, but were still running in the background after that!). 
+
+Most of the time, we'll want to make sounds that go on for a limited time, and stop of their own accord. 
+
+Listen to the difference between these two:
+
+{SinOsc.ar(440,0,0.1)}.scope						//Sine Oscillator goes on forever
+
+{SinOsc.ar(440,0,Line.kr(0.1,0.0,1.0))}.scope	 	//One second for the sine to disappear entirely
+
+
+In the second example, I multiplied the sine wave by a line generator that started at 0.1 but went 
+to zero over the course of a second.
+
+However, whilst the second sound fades out, both Synths hang around on the synthesis server unless you sent the stop command explicitly.   
+
+Compare (by watching your Synth count on the server graphic, for instance):
+
+{SinOsc.ar(440,0,Line.kr(0.1,0,1,doneAction:2))}.scope	 	//doneAction:2 causes the Synth to be terminated once the line generator gets to the end of its line
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Envelopes
+
+In general, we want total control over how parameters of a sound (like volume or frequency) vary over time. 
+This is often done by using envelopes. 
+
+ //help files- [Env] [EnvGen]
+
+Env([1,0,1],[1,1]).plot  //This makes an Envelope with three control points, at y positions given by the first array, and separated in x by the values in the second (see the Env help file). The curve drawn out should actually look like a letter envelope!
+
+The .plot gives a quick way of seeing the envelope. We won't need it for synthesis but it helps for you to see some envelope shapes.
+
+//various types of envelope demonstrated:
+			
+Env([0,1,0],[1.0,0.5]).plot  //one second 0 to 1 then half a second 1 to 0
+
+Env.linen(0.03,0.5,0.1).plot  //linen has attackTime, sustainTime, releaseTime, level, curve
+
+Env.adsr(0.01, 0.5, 0.5, 0.1, 1.0, 0).plot  //attackTime, decayTime, sustainLevel, releaseTime,
+				peakLevel, curve
+//note that the sustain portion is not shown in time; this particular envelope type deals with variable hold times, and the hold is missed out in the plot
+
+Here's another type of Envelope, good for making percussion sounds:
+
+Env.perc(0.05,0.5,1.0,0).plot //arguments attackTime, releaseTime, level, curve: good for percussive hit envelopes
+
+There are many more types of Envelope to discover and deploy
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Let's start using Envelopes for synthesis. We use EnvGen to run the desired Envelope over time.
+
+This is the envelope we'll run:
+
+Env([1,0],[1.0]).plot		
+
+The following just runs the Envelope: its too slow to hear any sounds (your ears only pick frequencies over 16-20Hz)
+
+{EnvGen.ar(Env([1,0],[1.0]))}.scope
+
+This is multiplying a simple sine tone at 440Hz by the envelope over time, to make a limited duration sound
+
+{SinOsc.ar(440,0,0.1)*EnvGen.kr(Env([1,0],[1.0]))}.scope
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Let's try a slightly more complex example.
+
+I'm going to use an envelope for frequency:
+
+Env([1000,20],[1.0]).plot		
+
+The EnvGen gets plugged into the frequency input of the Saw wave:
+
+{Saw.ar(EnvGen.ar(Env([1000,20],[1.0])),0.1)}.scope	 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Now I'll change the frequency of Saw over 0.5 second and have its amplitude go to zero over 2 seconds:
+
+{Saw.ar(EnvGen.ar(Env([10000,20],[0.5])),EnvGen.ar(Env([0.1,0],[2.0])))}.scope	 	
+(A fast frequency sweep is called a chirp in engineering literature, btw).
+
+
+You can see how the nesting can get more and more complex, and it's now very difficult to read 
+the code to see what's going on. This should really be neatened up by writing over a few lines:
+
+({
+	Saw.ar(
+		EnvGen.kr(Env([10000,20],[0.5])),  //frequency input
+		EnvGen.kr(Env([0.1,0],[2.0]))      //amplitude input
+	)
+}.play
+)
+
+In SuperCollider you find yourself having to work out what is plugged into what for complex networks,
+all written as text. Remember that it may help you if you draw a diagram on paper of the connections. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+I made one subtle difference when I rewrote it: I ran the EnvGen ar control rate (.kr) rather than audio rate (.ar). 
+
+We've tried both .kr or .ar and there's no real difference to our ears (the changes are relatively slow, at least compared to audio oscillator calculations for high frequencies).
+
+We often use .kr when possible, because it means a lower CPU load and ultimately we can run many more
+UGens at once. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Envelopes have a further use of prime importance: they can cause a running collection of UGens to be deallocated once a multiplier envelope has run through its course. 
+
+We'll need this when creating temporary events live. You don't want completed voices hanging around and wasting your CPU when you could be synthesising new voices.
+
+//FM sound
+({
+SinOsc.ar(
+	SinOsc.ar(10,0,10,440),
+	0.0,
+	EnvGen.kr(Env([0.5,0.0],[1.0]), doneAction:2)   //doneAction:2 appears again, the deallocation operation
+	)
+}.scope
+)
+
+The doneAction argument means that the envelope, on completion, causes its enclosing Synth to be freed.
+
+The only thing that matters is how long the envelope lasts in time: the following also deallocates 
+when the envelope ends, though it is controlling frequency rather than amplitude: 
+
+{Saw.ar(EnvGen.kr(Env([500,100],[1.0]),doneAction:2),0.1)}.scope
+
+Note how the graphical server status GUI shows no running Synths once this is deallocated. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+We already saw some UGens that can be used like Envelopes, without the two stage 
+Env/EnvGen construction. They work in deallocation too - here are examples:
+
+Line		//straight line generator		
+
+XLine		//exponential line generator
+
+
+{Saw.ar(SinOsc.ar(1,0,10,440),Line.kr(0,1,1,doneAction:2))}.scope
+
+{Saw.ar(SinOsc.ar(1,0,10,440),XLine.kr(0.0001,1,1,doneAction:2))}.scope
+
+
+
+
+
+
+
+
+
+
+
+There is a remaining thing to explain. I introduced the adsr Env type, and said it could deal with holding open for an unknown time, but did not go further then. 
+
+If you explore the Env help file you'll find references to the releaseNode and loopNode. Let's explain these; they may come in handy later. 
+
+
+
+Releasing envelopes
+
+Whilst some envelopes just run through their stages without intervention: 
+
+{EnvGen.ar(Env([0,0.1,0],[0.1,0.9]),doneAction:2)*SinOsc.ar(330)}.play
+
+others will freeze at a certain point, requiring a further instruction to 'release':
+
+a = {EnvGen.ar(Env.asr(0.1,0.1,1.0),doneAction:2)*SinOsc.ar(330)}.play //sound continues
+
+a.release(2.0); //let it finish, taking 2.0 seconds to fade out (it then deallocates, due to the doneAction:2)
+
+//similar, but explicitly using gate argument, which holds the envelope at the releaseNode
+a = {arg gate=1; EnvGen.ar(Env.asr(0.1,0.1,0.9),gate,doneAction:2)*SinOsc.ar(330)}.play
+
+a.set(\gate,0) //when gate is set to 0, the envelope can finish, and takes 0.9 seconds to fade out (releaseTime argument to Env.asr set above)
+
+You will normally have a gate argument in these situations; one was missed out above when introducing release just for simplicity of exposition. 
+
+
+To count the releaseNode number for an arbitrary envelope, imagine that the series of amplitude levels AFTER THE FIRST are indexed; each level and corresponding time gap leading to it is one node
+
+For 
+
+e = Env([0.2,1.0,0.0],[0.1,3.0],0,1); //releaseNode at node 1, which is the pair of 0.0 level in the first array and 3.0 seconds in the second. 
+
+a= {arg gate=1; EnvGen.ar(e,gate,doneAction:2)*SinOsc.ar(550,0,0.1)}.play
+
+a.set(\gate, 0); //takes 3.0 seconds to fade out
+
+
+
+
+
+Looping envelopes
+
+You can also get an envelope to go into a loop between the releaseNode minus one and the loopNode (the loopNode must be earlier than the releaseNode to be useful). Again, when receiving the release message or explicitly setting gate=0, the envelope transitions to the releaseNode and thence to the close.  
+
+e = Env([0.0,0.0,1.0,0.0],[0.5,1.0,2.0],0,2,0); //releaseNode at 2, loopNode at 0
+
+a= {arg gate=1; EnvGen.ar(e,gate,doneAction:2)*SinOsc.ar(550,0,0.1)}.play
+
+a.set(\gate, 0); //takes 2.0 seconds to fade out
+
+If you set the envelope looping fast enough, you can get interesting control signals and even head towards audio rate waveforms.
+
+e = Env([0.0,1.0,-1.0,0.0],[0.01,0.01,2.0],0,2,0); //releaseNode at 2, loopNode at 0
+
+e.plot
+
+a= {arg gate=1; EnvGen.ar(e,gate,timeScale:MouseX.kr(0.1,2.0),doneAction:2)}.play
+
+a.set(\gate, 0); //stops immediately since release transition to 0.0 occurs over 2 seconds, too slow to be a pitched oscillation
+
+
+
+
+

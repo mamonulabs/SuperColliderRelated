@@ -1,0 +1,181 @@
+FFT Processing
+
+Also see: 
+FFT Overview
+FFT
+
+
+The Fast Fourier Transform (FFT) is a central technnology in computer music, allowing an efficient transformation between the time domain (amplitude-time waveforms) and the frequency domain (spectrum, representing the phase and energy of component pure frequencies). It enables a variety of useful spectral processing techniques, and Fourier re-synthesis back into the time domain can be accomplished by an IFFT (Inverse FFT) or a third party additive synthesis UGen.  
+
+To process sound SuperCollider has a selection of PV (Phase Vocoder) UGens which are commonly used as in place operators on the FFT data: 
+
+input -> FFT -> PV_UGen1 ... PV_UGenN... -> IFFT -> output
+
+See the code examples below for how this 'chain' looks in actual SC code form
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+example 1: do nothing transformation 
+
+
+s = Server.local.boot;
+b = Buffer.alloc(s,1024,1); //a buffer must be allocated which gives the size of the FFT; 1024 sample window size in this case. The hop size is half the window by default.
+	
+(
+{ var in, chain;
+	
+	in = WhiteNoise.ar(0.8);
+	
+	chain = FFT(b, in);	//go from time domain to frequency domain; note that the UGen does not appear to run at a conventional rate (no .ar or .kr); in actual fact, FFT and PV_UGens are at control rate, but only calculate when there is data to act on; IFFT is at audio rate to produce output samples
+	
+						//the output chain will always be -1 except when a block of fft data has been calculated; a trigger is then sent, essentially by returning the buffer number containing the data (i.e., b.bufnum in this case) 
+						
+	[IFFT(chain),in];			//convert the data back to the time domain when input chain is a valid buffer number; I'm outputting in stereo with the IFFT output on the left and the original input on the right channel for comparison
+}.play(s);
+)
+
+b.free; //frees the resource
+
+
+
+
+
+
+
+
+
+
+
+example 2 PV UGen example; spectral filtering
+
+b = Buffer.alloc(s,1024,1); 
+
+(
+{ var in, chain;
+	
+	in = WhiteNoise.ar(0.8);
+
+	chain = FFT(b, in);	
+		
+	//PV_BrickWall acts as a spectral filter, low pass when second argument (wipe) is -1 to 0 and high pass for 0 to 1   	
+	chain= PV_BrickWall(chain, Line.kr(-1,1,10));
+	
+	Pan2.ar(IFFT(chain),0.0)
+}.play(s);
+)
+
+b.free; //frees the resource
+
+
+
+
+
+
+
+
+
+
+
+example 3 Multiple PV UGens across two chains!
+
+(
+b = Buffer.alloc(s,1024,1); 
+c = Buffer.alloc(s,1024,1); 
+d = Buffer.alloc(s,1024,1); //buffer for a copy of spectral data
+)
+
+(
+{ var in1, in2, chain1, chain2, copychain;
+	
+	in1 = Saw.ar(440,0.8);
+	in2 = SoundIn.ar(0);
+
+	chain1 = FFT(b, in1);	
+	chain2 = FFT(c, in2);
+	copychain= PV_Copy(chain2, d); //copy of FFT analysis of SoundIn 
+	chain1 = PV_MagMul(chain1,chain2);		
+	copychain = PV_MagFreeze(copychain,LFNoise0.kr(10)); //random spectral freeze effect, when random numbers (generated at 10 times a second) go above 0
+	
+	[0.25*IFFT(chain1),IFFT(copychain)]
+}.play(s);
+)
+
+(
+b.free; //frees the resource
+c.free;
+d.free;
+)
+
+
+
+
+example 4 Individually modifying spectral data using other UGens
+
+See pvcollect
+
+
+(
+b = Buffer.alloc(s,1024,1); 
+c = Buffer.read(s,if(Main.versionAtLeast(3,5),{Platform.resourceDir +/+ "sounds/a11wlk01.wav"},{"sounds/a11wlk01.wav"})); 	
+)
+
+
+(
+{ var in, chain;
+	
+	in = PlayBuf.ar(1,c,BufRateScale.kr(c),loop:1);
+
+	chain = FFT(b, in);	
+		
+	chain= chain.pvcollect(b.numFrames,{|mag, phase, index|
+	//this function gets called once for every bin 
+	var noise;
+	
+	noise= LFNoise1.kr(rrand(0.5,1.1));
+	 
+	[noise*mag,noise.range(-pi,pi)]	
+	}, 
+	frombin:0, tobin:250,zeroothers:1);
+	
+	Pan2.ar(IFFT(chain),0.0)
+}.play(s);
+)
+
+(
+b.free; //frees the resource
+c.free;
+)
+
+
+
+
+
+
+Some third party sources: 
+
+Non-realtime analysis using LORIS, SPEAR and ATS, and real-time resynthesis: work by Scott Wilson and Josh Parmenter. 
+
+JoshUGens library from sc3-plugins project has many additional PV_UGens
+
+FFT also used as a first stage in various machine listening UGens: 
+Onsets
+MFCC
+
+
+Technical Note: It is possible to run multiple machine listening UGens on a single FFT (since they usually do not disturb the data source itself); but unless you know what you're doing (i.e., are willing to check the source code for the UGens!) it is usually safest to assume they are changing the fft data in place. PV_Copy can be used to create copies of the FFT output without having to run the actual FFT itself again. 
+
+
+ 

@@ -1,0 +1,466 @@
+Interaction via MIDI, SoundIn, external controllers
+
+(
+Server.default=s=Server.local;
+s.boot;
+)
+
+
+
+MIDI
+
+To access your MIDI devices you first initialise:
+
+MIDIClient.init	//should post a list of available devices
+
+There may be more than one source and destination device, each containing different input and output ports.  
+
+To react to incoming MIDI messages, the user sets up callback functions.
+
+MIDIIn.connect(0,MIDIClient.sources[0])  //first number is port number, second is device from sources list
+//MIDIIn.connect //would work on its own but defaults to first port of first device
+//MIDIIn.connectAll //connect to all attached input sources
+
+Incoming MIDI messages can be easily handled through some callback functions in MIDIIn. However, from SuperCollider 3.5, the use of MIDIFunc is much preferred. 
+
+First, the old way: 
+
+MIDIIn.noteOn= { arg src, chan, num, vel;   [chan,num,vel / 127].postln; };   //set up callback for MIDI Note On message
+
+MIDI messages typically have a 7-bit (2**7) value range, so take on integers from 0 to 127. The vel/127 above converts from this range to a 0.0 to 1.0 range befitting an amplitude control. 
+
+MIDIIn.control = { arg src, chan, num, val;   [chan,num,val/127].postln; }; //control change messages have a 7 bit value
+
+MIDIIn.bend = { arg src, chan, bend;    [chan,bend/8192].postln; }; //pitch bend has a 14 bit range and is a bipolar signal (so bend/8192 will remap the range to -1.0 to 1.0)
+
+See the MIDIIn help file for further message types. 
+[MIDIIn]
+
+
+
+
+
+
+
+
+Examples: 
+
+//creating Synths with each new note on
+(
+SynthDef(\sound,{arg freq=440, amp=0.1;
+	var saw, filter, env; 
+	
+	saw= Saw.ar(freq);
+	filter= Resonz.ar(saw,1000,0.1)*amp;
+	env= EnvGen.ar(Env([0,1,0],[0.01,0.1]),doneAction:2);
+	
+	//dup(2) duplicates the mono signal onto two channels, giving instant stereo middle panned output
+	Out.ar(0,(filter*env).dup(2))
+}).add
+)
+
+//create one Synth for every new note, Synths will be of finite duration because of the envelope 
+MIDIIn.noteOn = { arg src,chan, midinote, velocity;   Synth(\sound,[\freq,midinote.midicps,\amp,velocity/127.0]) };
+	
+//turn off again	
+MIDIIn.noteOn = nil; 
+
+
+
+
+
+
+
+
+
+
+
+
+Keeping track of active (held-down, sustained) notes can be a chore in MIDI. Here is an example of doing this using an array with 128 slots, one for each possible MIDI note. 
+
+//note the use of a gate; this will sustain until released
+(
+SynthDef(\sound,{arg freq=440, amp=0.1, gate=1;
+	var saw, filter, env; 
+	
+	saw= Saw.ar(freq);
+	filter= Resonz.ar(saw,1000,0.1)*amp;
+	env= EnvGen.ar(Env.asr(0.005,1.0,0.1),gate,doneAction:2);
+	
+	Out.ar(0,(filter*env).dup(2))
+}).add
+)
+
+(
+var activenotes = nil!128; //make Array of 128 slots, initially with nil objects in to represent nothing
+var releasefunction = {|index| 
+	
+		//release existing note if present already
+	if(activenotes[index].notNil) {
+		activenotes[index].release; //will send gate=0
+		activenotes[index] = nil; //make sure now empty slot ready
+	}
+		
+	}; 
+
+//create one Synth for every new note, with logic to check existing notes (though not MIDI channel sensitive)
+MIDIIn.noteOn = { arg src,chan, midinote, velocity;   
+	
+	"received".postln;
+	
+	releasefunction.value(midinote);
+	
+	//put active note in array; function above tidied any existing note on this key
+	activenotes[midinote] = Synth(\sound,[\freq,midinote.midicps,\amp,velocity/127.0]);
+	
+	};
+
+//must also look for note offs as indicated end of held note
+MIDIIn.noteOff = { arg src,chan, midinote, velocity;   
+	
+	releasefunction.value(midinote);
+
+	};
+
+)	
+
+
+
+
+
+
+
+
+
+
+
+
+//using control change for continuous variation; run one block/line at a time here
+//no envelope this time, permanent sound
+(
+SynthDef(\sound,{arg freq=440, amp=0.1;
+var saw, filter, env; 
+
+saw= Saw.ar(freq);
+
+filter= Resonz.ar(saw,1000,0.1)*amp;
+
+Out.ar(0,filter.dup(2))
+}).add
+)
+
+a= Synth(\sound,[\freq,77,\amp,0.9]); //create running synth
+
+//use the set message to update the control inputs of the running synth
+MIDIIn.control = { arg src, chan, num, val;   a.set(\amp, val/127) };
+
+//when you're finished twiddling MIDI controllers
+a.free;
+
+
+
+
+
+
+
+For sending MIDI messages out see the MIDIOut help file
+[MIDIOut]
+
+WARNING: by default there is a long latency to messages sent out, to allow it to match with other default latencies in the system. 
+
+m= MIDIOut(0); //quick way to access device 0, port 0
+m.latency= 0.0;  //use this to remove all latency and send messages immediately
+m.noteOn(1,60,127);     //arguments: channel, note, velocity
+m.noteOff(1,60,0);
+
+There are also some helper classes to allow you to more easily set up multiple independent callbacks for the same type of message:
+
+[MIDIFunc]
+[MIDIdef]
+
+
+To make a callback for when receiving note on messages:
+
+
+MIDIIn.connect(0,MIDIClient.sources[1])  //second source device 
+
+(
+b = MIDIFunc.noteOn({ |velocity, midipitch, channel|
+    
+	[\velocity,velocity, \midinote,midipitch, \channel, channel].postln;
+
+});
+)
+
+//make a separate callback, also for MIDI note on triggers
+
+(
+c = MIDIFunc.noteOn({ |velocity, midipitch, channel|
+    
+	"note on!".postln;
+
+});
+)
+
+//remove first callback and keep second 
+
+b.free; 
+
+//see the [Using MIDI] helpfile for more information
+
+c.free; //remove second
+
+//note that by default, cmd+period will remove any MIDIFuncs that haven't been made permanent
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SoundIn
+
+To obtain an audio input stream, use the simple SoundIn UGen
+
+{ SoundIn.ar([0,1],0.1) }.play;	      // stereo through patching from 2 inputs to output
+
+{ SoundIn.ar(1,0.1) }.play;	      // mono on input channel 1; won't work if you don't have at least 2 inputs!
+
+
+So it's easy to build effects processors for live audio:
+
+(
+{ //ring modulator
+SinOsc.ar(MouseX.kr(0.001,110,'exponential' ))*SoundIn.ar(0,0.5) 
+}.play;	      // stereo through patching from input to output
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SuperCollider comes with an amplitude tracker and pitch tracker for realtime audio 
+
+(
+// use input amplitude to control Pulse amplitude - use headphones to prevent feedback.
+{
+	Pulse.ar(90, 0.3, Amplitude.kr(SoundIn.ar(0)))
+}.play
+)
+
+
+You can threshold the input to avoid picking up background noise
+
+(
+{
+var input,inputAmp,threshhold,gate;
+var basefreq;
+
+input = SoundIn.ar(0,0.1); 
+inputAmp = Amplitude.kr(input);
+threshhold = 0.02;	// noise gating threshold
+gate = Lag.kr(inputAmp > threshhold, 0.01);
+(input * gate)		
+}.play;
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+The Pitch follower has many input arguments, though you usually take the defaults
+without worrying. It returns two outputs- the tracked frequency and a signal indicating
+whether it has locked onto any periodicity or not
+
+
+Server.internal.boot; //if on a Mac you'll need to swap back to internal server for using .scope- you can have both the internal and localhost server on at once, but you might need to press the -> default button
+
+//showing the outputs - K2A makes sure control rate signals are converted to audio rate, because the final output of a Synth has to be audio rate
+(
+{
+var freq, hasFreq;
+# freq, hasFreq = Pitch.kr(SoundIn.ar(1,0.1));
+[K2A.ar(freq*0.001), K2A.ar(hasFreq)]
+}.scope
+)
+
+
+//detected fundamental frequency used to control some oscillators with allpass reverberation
+//Amplitude detector also used to make the control track the input more effectively
+(
+{
+	var in, amp, freq, hasFreq, out;
+	in = Mix.ar(SoundIn.ar([0,1]));
+	amp = Amplitude.kr(in, mul: 0.4);
+	# freq, hasFreq = Pitch.kr(in);
+	out = Mix.ar( LFTri.ar(freq * [0.5, 1, 2]) ) * amp;
+	6.do({ 
+		out = AllpassN.ar(out, 0.040, [0.040.rand,0.040.rand], 2) 
+	});
+	out
+}.play
+)
+
+
+
+
+
+
+//Also switch waveform based on hasFreq output
+(
+{
+	var in, amp, freq, hasFreq, out;
+	
+	in = SoundIn.ar(1);
+	amp = Amplitude.kr(in, mul: 0.4);
+	# freq, hasFreq = Pitch.kr(in);
+	
+	out=if(hasFreq,Pulse.ar(freq,0.5,0.1),SinOsc.ar(freq,0,0.1));
+	
+	6.do({ 
+		out = AllpassN.ar(out, 0.040, [0.040.rand,0.040.rand], 2) 
+	});
+	out	
+}.play
+)
+
+
+
+
+
+
+
+
+
+
+There are various other machine listening capabilities in SuperCollider.  Machine listening is getting the computer to extract perceptually and musically meaingful attributes by analyzing an input sound.
+
+Here are some onset detectors which might be helpful: 
+
+[Onsets]
+[PV_HainsworthFoote]
+[PV_JensenAndersen]
+
+They rely on using the FFT UGen in the front end to go from time domain to frequency domain. You can trust the code examples for now and we'll investigate FFT properly later on (or explore the help file yourself).  
+
+Example triggering TGrains UGen:
+
+
+//run this first
+b = Buffer.read(s,Platform.resourceDir +/+"sounds/a11wlk01.wav");
+
+//now this
+(
+{
+var source, detect;
+	
+	source= SoundIn.ar(0); 
+	
+	detect= Onsets.kr(FFT(LocalBuf(2048),source),0.1); //second argument is detection threshold
+	//detect= PV_HainsworthFoote.ar(FFT(LocalBuf(2048),source), 1.0, 0.0, 0.7, 0.01);
+	
+	TGrains.ar(2, detect, b, LFNoise0.kr(10,0.2,1.0), MouseX.kr(0,BufDur.kr(b)), MouseY.kr(0.1,0.5), LFNoise0.kr(10,1.0), 0.5, 2);
+}.play
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+RecordBuf
+
+If you'd like to capture live sound, the RecordBuf UGen is your friend.
+You need to set up a buffer to store the recorded sample data.
+
+(
+var b;
+
+b=Buffer.alloc(s,44100,1);	//1 second mono buffer allocated on local server
+
+{
+//continuously record in a loop, recording to the buffer we just declared
+//each record cycle multiplies the old data 
+	RecordBuf.ar(SoundIn.ar(0), b, 0, 1.0, MouseX.kr(0.0,1.0), 1, 1, 1);
+	
+//playback the captured buffer in a loop, backwards
+	PlayBuf.ar(1,b,MouseY.kr(0.0,-1.0), 1,0,1);
+}.play;
+)
+
+You might sync captured buffers to tempo for dance music, and add refinements like a user interface to choose when to rerecord the buffer...
+
+
+
+There are also facilities for control from graphics tablets and joysticks:
+
+[SC2DTabletSlider]
+[HIDDeviceService]
+[GeneralHID]
+
+You might also like to try
+
+[SerialPort]		//serial port (via USB usually these days) for talking to certain external devices
+
+Another standard way is to communicate with other applications using Open Sound Control, a network music protocol; we'll cover this in a later week in this course. 
+
+
+
+

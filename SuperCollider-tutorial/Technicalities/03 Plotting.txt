@@ -1,0 +1,174 @@
+Plotting with SC
+
+I assume you're familiar with Stethoscope ({}.scope) and FreqScope ({}.freqscope) already
+
+
+plot //highlight the method name 'plot' and ask for classes which implement it (cmd+Y on Mac)
+
+
+Function plotting lets you check synthesis and draw diagrams!
+
+//one cycle of a triangle wave at 100 Hz
+{LFTri.ar(100)}.plot(0.01)
+
+//observe frequency modulation close up
+{SinOsc.ar(400+SinOsc.ar(100,0,200))}.plot(0.025)
+
+//observe stereo frequency modulation at a distance
+{SinOsc.ar(400+SinOsc.ar([10,100],0,[200,100]))}.plot(0.2)
+
+
+
+
+
+
+
+
+
+Envelopes
+
+Env([0,1,1,0],[0.5,1.0,2.0],[10,0,-4]).plot //this one you've probably seen before in learning about Env?
+
+
+i= InterplEnv([0,1,1,0],[0.5,1.0,2.0],[10,0,-4]).plot
+
+If you've not seen InterplEnv before, it's used with an IEnvGen
+
+{SinOsc.ar(IEnvGen.kr(i,MouseX.kr(0,3.5))*500+200,0,0.2)}.play
+
+It can therefore replace using the Index UGen (which requires a buffer to be allocated), but also allows continuous ranges
+
+
+
+
+
+
+
+
+
+Plotting an ArrayedCollection
+
+[0,5,1,3,2,4].plot
+
+
+
+Plotting a Buffer
+
+b=Buffer.read(s,Platform.resourceDir +/+ "sounds/a11wlk01.wav"); 
+
+b.plot
+
+{PlayBuf.ar(1,b)}.play
+
+//get to language safely
+b.loadToFloatArray(0,-1,{arg data; a=data;})
+
+a.plot
+
+//manipulate using language
+a= a.collect{|val| if(0.1.coin,{val*val},{val*val*val}) }; 
+
+a.plot
+
+//return to buffer
+b.loadCollection(a); 
+
+b.plot
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wavetable
+
+(also see Shaper, Osc, Signal, Wavetable help files)
+
+A wavetable has a special efficient data format which can be loaded to a buffer for use with the Osc and Shaper UGens. 
+
+You either have to use some special Wavetable creating class methods (for example, sineFill and chebyFill) or create one via a Signal
+
+a= Signal.fill(256,{arg i; var t= (i/255.0)+0.1.rand;  (t*t)-t+(0.3*t*t*t)}); 
+
+a= a.asWavetable
+
+a.size //doubles size; adds interpolated values that are the secret ingredient of a wavetable
+
+Plotting a wavetable will show you the wavetable with the special interpolating values hidden.
+
+a.plot
+
+b=Buffer.alloc(s,512,1);
+
+b.loadCollection(a);
+
+b.plot //this will show the hidden values too; looks weirder!
+
+{Osc.ar(b,440,0,0.2)}.play //buzzy Synth
+
+{LPF.ar(Osc.ar(b,MouseX.kr(50,500,'exponential'),0,0.2),MouseY.kr(100,10000,'exponential'))}.play //filter, but probably already aliasing
+
+ 
+
+
+
+
+SoundFiles
+
+f= SoundFile.openRead(Platform.resourceDir +/+ "sounds/a11wlk01.wav");
+
+f.plot //uses the SCSoundFileView
+
+
+
+
+
+
+
+Some other graphing functions
+
+
+histograms via Collection:histo
+
+Array.rand(1000,0.0,1.0).histo(10,0,1).plot(minval:0,maxval:200)   //histo first argument is number of histogram bins
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+---------------------------------------------------------
+advanced (requires use of Extensions folder/Quarks, see Extending SC): 
+For fun: Dan Stowell's HeatMap (it's a Quark, example from the help file)
+
+
+// This distribution is interesting, but .plot doesn't really show why:
+a = 20.collect{|x|20.collect{|y| (x+y/pi).sin.rand}}.flat;
+a.plot(numChannels:20);
+a.heatMap(20); // Much better!
+// Choose your colour scheme:
+a.heatMap(20, colscheme: \red);
+a.heatMap(20, colscheme: \brw);
+a.heatMap(20, colscheme: \coals);
+
+
+
+
+
+

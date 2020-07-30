@@ -1,0 +1,44 @@
+//The mystery of getting mouse values back in the language solved using OSCresponder and SendTrig
+
+
+(
+SynthDef(\mousedemo, {
+var mx,my, impulse;
+
+mx= MouseX.kr(0.0,1.0);
+my= MouseY.kr(0.0,1.0);
+
+impulse= Impulse.kr(15); //update at 15Hz = haptic rate
+
+SendTrig.kr(impulse, 100, mx);
+SendTrig.kr(impulse, 101, my);
+
+}).play;
+)
+
+
+
+
+(
+var mx, my; 
+
+OSCresponder(s.addr,'/tr',{ arg time,responder,msg;
+var value; 
+
+//Post << msg << nl;
+value= msg[3];
+
+switch (msg[2],
+100, {mx= value;},
+101,{my=value;});
+}).add;	
+
+{inf.do{[\mx, mx, \my, my].postln; 0.5.wait;}}.fork; 
+
+)		
+
+
+
+
+//Note that on SC3.5 or earlier you could do:
+Platform.getMouseCoords

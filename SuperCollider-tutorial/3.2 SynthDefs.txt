@@ -1,0 +1,297 @@
+SynthDefs (Synth Definitions)
+
+The {}.play notation is not the preferred one for SuperCollider 3, but it allowed us to get started with synthesis quickly. What you will often see from now on is use of the SynthDef construct to define networks of unit generators instead. Lots of synths are then created from a single SynthDef recipe, which is much more reusable, and especially important for making clouds of similar sounds and other granular and ensemble processes. 
+
+SynthDef = Synthesis Definition
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+In order to synthesise and process sounds in SuperCollider you have to write a recipe for the UGen network in program code. This recipe is formally written using a particular language construct, the SynthDef. 
+
+SynthDef(\sine, {Out.ar(0,SinOsc.ar(Rand(440,880),0,0.1))}).add; 
+
+The only differences to the classic {SinOsc.ar(440,0,0.1)}.play example are:
+-- the SynthDef wrapper SynthDef(\nameofsynthdef, { ...someUGens... }).add
+--use of the Out UGen. The full explanation of the Out UGen is deferred until we discuss busses, but you can think of it for now as saying 'play on the first audio output of the computer'. 
+--Rand(440,880) instead of a fixed constant frequency; this is to make things more interesting when we reuse the SynthDef for creating Synths.
+
+Once a recipe is known to the system, you can create an individual Synth object to that specification: 
+
+Synth(\sine); 
+
+In fact, it can be used as many times over as you desire (run these lines one at a time):
+
+a=Synth(\sine);  
+b=Synth(\sine);  
+c=Synth(\sine); 
+ 
+And these lines one at a time to individually stop each synth:
+
+a.free;
+b.free;
+c.free;
+
+Note how each of the Synths got initialised to a random frequency from 440 to 880 when created; this is due to the Rand UGen in the SynthDef above.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+You may see some variations in the way the SynthDef is made and used:
+
+SynthDef("aaa",{Out.ar(0,SinOsc.ar(440,0,0.1))}).add
+
+Synth("aaa"); //now this
+
+\aaa is the same as "aaa" for the purposes of naming the SynthDef recipe here (\aaa is a Symbol, one fixed value; "aaa" is a string where you can individually access each character)
+
+Note that your SynthDef is sent to the current default Server, and that if no synthesis server is booted, you haven't actually acheived anything. Keep an eye on your Server windows to make sure the Server is booted, and that the
+ -> default 
+button is green. 
+You can also check things programmatically: 
+
+Server.default //should return the server, usually localhost or internal; global variable s also typically points to the same 
+s.serverRunning //check if it is on; should return true
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Warnings about using SynthDef 
+
+Particularly amongst older code (pre SuperCollider 3.4), you may also see variants to 'add', like:
+send(s)	
+load(s)	
+memStore
+store
+writeDefFile
+writeOnce
+storeOnce
+Though they can have uses in particular circumstances (such as whether to make a copy of a SynthDef on disk or not for permanent availability), add will be your default way of making sure a SynthDef is known to the synthesizer and the system in general. The only issue with add to bear in mind is that the SynthDef is only known (once added) as long as the server is booted; if you quit the synthesizer, you will have to boot again and then add once more before the SynthDef is again available. 
+
+There is even a shortcut to create a SynthDef and run a Synth based on it in one step:
+SynthDef(\saw, {Out.ar(0,Saw.ar(Rand(440,880),0.1))}).play(s);
+This is not recommended except perhaps for debugging, since it undermines the sense of setting up the recipe, then using that recipe multiple times to make actual goodies. If you want quick prototyping, {}.play is usually the quickest way; but you should eventually package reusable recipes up with SynthDef, and then invoke Synths to use that definition. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+To explain one reason for the existence of these variations, if you look in the synthdefs folder in the SuperCollider application directory, you'll see various files that each represent individual SynthDefs. These are automatically loaded up when you start the synthesis server (e.g., via that Boot button, or via s.boot). 
+
+.add - just sends the SynthDef to the synthesis server at this moment, doesn't place any file on disk
+
+.writeDefFile - just writes the SynthDef into a file on disk, doesn't load it to the synthesis server. 
+
+.store - writes the file on disk, so it's loaded every time you start the synthesis server from now on, and also sends it immediately so it's available right away. 
+ 
+So for permanent existence on disk, use .store; but there are often ways round this by using add at an initialisation stage before running a particular composition.  Otherwise you may find you're cluttering up your disk unnecessarily. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Let's now have a look at adding arguments to a SynthDef: 
+
+SynthDef(\sine,{arg freq=440, amp=0.1; Out.ar(0,SinOsc.ar(freq,0,amp))}).add; //added frequency and amp arguments to recipe; make sure they have default values (e.g. freq=440)
+
+Synth("sine"); //now this accepts the defaults
+
+Synth("sine",[\freq,880]); //this makes another Synth from the recipe an octave up, by being explicit about the frequency argument to the SynthDef
+
+You can see how this allows us to make lots of related Synths from a common recipe with slight variations in sound between them. 
+
+
+a=Synth(\sine);  
+b=Synth(\sine,[\freq,550]);  
+c=Synth(\sine,[\freq,660, \amp, 0.5]); 
+
+We can continue to set the named inputs when we feel like it: 
+
+c.set(\freq, 1000);
+b.set(\amp, 0.3, \freq, 100)
+
+
+And can use these lines one at a time to individually stop each synth:
+
+a.free;
+b.free;
+c.free;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Exercise:
+
+Try taking a simple synthesis patch you've been working on and turn it into a SynthDef. 
+
+As a prototype you want something like:
+
+(
+SynthDef(\synthdefname,{arg input1= defaultvalue; //any arguments go here, make sure they have default values
+
+//some code for UGens - the sort of thing that went inside {}.play before
+
+Out.ar(0, finaloutput) //finaloutput is the final result UGen you want to hear
+}).add
+)
+
+
+
+Synth(\synthdefname, [\input1, inputval1]); //inputval1 is the constant starting value for argument input1
+
+
+
+
+
+
+
+
+
+
+
+
+One common query: recovering SynthDefs and SynthDesc
+
+People often ask if the SynthDef code can be recovered from the synthdef file on disk, or the data over on the server. This is not possible, except for limited circumstances, where you want the code for a SynthDef you added earlier in the session (of course, in that case, you've probably got the code lying around already anyhow).
+
+In parallel to sending data over to the server, the add message for SynthDef will also store some meta-data, as a SynthDesc inside the SynthDescLib which is a language-side construction (it's not over on the synthesis server but here in SuperCollider's main program). The SynthDesc is particularly critical to the Patterns library, which is one extension set you can explore later in the course. 
+
+
+
+SynthDescLib.global.synthDescs[\sine].def.func.postcs //post code used to make SynthDef for \sine (assumes you added the \sine SynthDef above)
+
+
+SynthDescLib.global.browse; // browse the properties of available SynthDescs in the system
+
+
+//iterate through all available, posting any known function code
+(
+SynthDescLib.global.synthDescs.do { |desc|
+	if(desc.def.notNil) {
+		"\nSynthDef %\n".postf(desc.name.asCompileString);
+		desc.def.func.postcs;
+	};
+};
+)
+
+
+
+
+
+
+
+
